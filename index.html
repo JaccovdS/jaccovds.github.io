@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV Secret Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0px 0px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        label, input, button {
+            display: block;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>CSV Secret Generator</h1>
+    <form id="csvForm">
+        <label for="secret">Enter Secret:</label>
+        <input type="text" id="secret" required>
+
+        <label for="csvFile">Upload CSV File:</label>
+        <input type="file" id="csvFile" accept=".csv" required>
+
+        <button type="submit">Generate</button>
+    </form>
+
+    <a id="downloadLink" style="display: none;">Download Processed CSV</a>
+</div>
+
+<script>
+    const uppercase = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"];
+    const lowercase = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"];
+    const numbers = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    const specialchars = ["#", "?", "!", "@", "$", "%", "^", "&", "(", ")", "{", "}", ":", ".", ",", "/", "\\", "+", "*", ";"];
+
+    // Function to generate SHA256 hash
+    async function generateSHA256(secret, imei, iccid) {
+        const concatString = secret + imei + iccid;
+
+        const msgBuffer = new TextEncoder().encode(concatString);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const sha256Hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+        let password = '';
+        for (let i = 0; i < sha256Hash.length; i += 2) {
+            let num = parseInt(sha256Hash.slice(i, i + 2), 16);
+            let char = '';
+
+            if (num % 4 === 0) {
+                char = uppercase[num % 26];
+            } else if (num % 4 === 1) {
+                char = lowercase[num % 26];
+            } else if (num % 4 === 2) {
+                char = numbers[num % 10];
+            } else if (num % 4 === 3) {
+                char = specialchars[num % 20];
+            }
+            password += char;
+        }
+
+        return password;
+    }
+
+    document.getElementById('csvForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+
+        const secret = document.getElementById('secret').value;
+        const fileInput = document.getElementById('csvFile').files[0];
+
+        if (!fileInput || !secret) {
+            alert('Please provide a secret and a CSV file.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = async function(event) {
+            const csvContent = event.target.result;
+            const lines = csvContent.split('\n');
+            const processedLines = ['Name,IMEI,ICCID,Secret'];
+
+            let firstLine = true;
+            for (const line of lines) {
+                if (firstLine) {
+                    firstLine = false;
+                    continue; // Skip the header
+                }
+
+                const row = line.split(',');
+
+                if (row.length === 11) {
+                    const name = row[2];
+                    const imei = row[7];
+                    const iccid = row[1].replace(/F/g, '').trim();
+                    const generatedSecret = await generateSHA256(secret, imei, iccid);
+
+                    processedLines.push(`${name},${imei},${iccid},"${generatedSecret}"`);
+                } else {
+                    console.log(`Skipping row with unexpected number of columns: ${row.length}`);
+                }
+            }
+
+            const processedCsv = processedLines.join('\n');
+            const blob = new Blob([processedCsv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+
+            const downloadLink = document.getElementById('downloadLink');
+            downloadLink.href = url;
+            downloadLink.download = `parsed_output_${new Date().toISOString().replace(/:/g, '-').replace(/\..+/, '')}.csv`;
+            downloadLink.style.display = 'block';
+        };
+
+        reader.readAsText(fileInput);
+    });
+</script>
+
+</body>
+</html>
